@@ -1,0 +1,1 @@
+python endpoints.py https://www.unilever.com/ --max-pages 100 --delay 2 --output my_endpoints.txt
