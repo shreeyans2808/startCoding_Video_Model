@@ -321,6 +321,9 @@ class AdvancedWebScraper:
             time.sleep(self.delay)
             
         print(f"\nScraping complete. Visited {len(self.visited_urls)} pages.")
+    
+        
+
 
 def main():
     parser = argparse.ArgumentParser(description='Advanced Web Scraper with Video Download')
@@ -348,27 +351,6 @@ def main():
     
     scraper.crawl_and_scrape()
     print(f"\nAll scraped data has been saved to the '{args.output}' directory.")
-
-def should_skip_youtube_url(url):
-    """Determine if a YouTube URL should be skipped"""
-    # Skip malformed URLs
-    if '"' in url or 'target=' in url.lower():
-        return True
-    
-    # Skip channel URLs (they require different handling)
-    if re.match(r'^https?://(www\.)?youtube\.com/(channel/|c/|user/|@)', url):
-        return True
-        
-    return False
-
-def download_youtube_content(url, output_dir, state):
-    """Handle YouTube URLs with skipping logic"""
-    if should_skip_youtube_url(url):
-        state.update_state(error_messages=state.error_messages + 
-                         [f"Skipping unsupported YouTube URL: {url}"])
-        return False
-    
-    # Rest of your download logic...
 
 if __name__ == '__main__':
     main()
