@@ -26,29 +26,37 @@ def get_search_results(scores, indices, metadata):
     return results
 
 def search_index(query, query_type, top_k=5):
-    index, metadata = load_or_create_index()
-    
-    if query_type == "text":
-        emb = embed_text(query)
-    elif query_type == "image":
-        image = Image.open(query).convert("RGB")
-        emb = embed_image(image)
-    elif query_type == "audio":
-        audio, sr = librosa.load(query, sr=16000)
-        text = transcribe_audio(audio, sr)
-        emb = embed_text(text) if text else None
-    elif query_type == "video":
-        frames = process_video(query)
-        emb = np.mean([embed_image(f["frame_image"]) for f in frames], axis=0)
-    else:
-        raise ValueError("Invalid query type")
+    try:
+        index, metadata = load_or_create_index(create_if_not_exists=False)
+        
+        if query_type == "text":
+            emb = embed_text(query)
+        elif query_type == "image":
+            image = Image.open(query).convert("RGB")
+            emb = embed_image(image)
+        elif query_type == "audio":
+            audio, sr = librosa.load(query, sr=16000)
+            text = transcribe_audio(audio, sr)
+            emb = embed_text(text) if text else None
+        elif query_type == "video":
+            frames = process_video(query)
+            emb = np.mean([embed_image(f["frame_image"]) for f in frames], axis=0)
+        else:
+            raise ValueError("Invalid query type")
 
-    if emb is None:
-        print("Failed to generate query embedding")
+        if emb is None:
+            print("Failed to generate query embedding")
+            return None
+
+        D, I = index.search(emb.reshape(1, -1), top_k)
+        return get_search_results(D[0], I[0], metadata)
+    except FileNotFoundError as e:
+        print(f"Error: {str(e)}")
+        print("Please run generate_index.py first to create an index.")
         return None
-
-    D, I = index.search(emb.reshape(1, -1), top_k)
-    return get_search_results(D[0], I[0], metadata)
+    except Exception as e:
+        print(f"Error searching index: {str(e)}")
+        return None
 
 def get_text_content(query, top_k=5):
     results = search_index(query, "text", top_k)
