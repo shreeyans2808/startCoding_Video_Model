@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 import time
-from webscrape import AdvancedWebScraper  # Assuming your script is saved in advanced_web_scraper.py
+from webscrape import AdvancedWebScraper 
 
 def main():
     st.set_page_config(
