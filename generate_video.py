@@ -105,87 +105,184 @@ def generate_audio_for_sentence(sentence, output_path):
         print(f"Error generating audio: {str(e)}")
         return False
 
-def create_video(script_with_images, output_path="output_video.mp4", fps=24, duration_per_image=5):
-    """Create video from images and add subtitles with audio"""
+def create_video(script_with_images, output_path="output_video.mp4", duration_per_image=5):
+    """Create video from images and add subtitles with audio using moviepy"""
     try:
         if not script_with_images or not any(item['image'] for item in script_with_images):
             print("No valid images found for video creation")
             return
 
-        # Create temporary directory for audio files
         temp_dir = tempfile.mkdtemp()
         audio_files = []
+        video_clips = []
 
-        # Get the first valid image to determine dimensions
-        first_image = None
-        for item in script_with_images:
-            if item['image']:
-                print(f"\nTrying to download image: {item['image']}")
-                first_image = cv2.imread(download_image(item['image']))
-                if first_image is not None:
-                    print("Successfully loaded first image")
-                    break
-                else:
-                    print("Failed to load first image")
-        
-        if first_image is None:
-            print("Could not read any images")
-            return
-
-        # Get video dimensions from first image
-        height, width = first_image.shape[:2]
-        print(f"Video dimensions: {width}x{height}")
-        
-        # Create video writer
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        temp_video_path = os.path.join(temp_dir, "temp_video.mp4")
-        out = cv2.VideoWriter(temp_video_path, fourcc, fps, (width, height))
-        
-        # Calculate frames for 5 seconds per image
-        frames_per_image = fps * duration_per_image  # 24 fps * 5 seconds = 120 frames per image
-        
-        print(f"Creating video with {len(script_with_images)} images")
-        print(f"Frames per image: {frames_per_image}")
-        print(f"Total duration: {len(script_with_images) * duration_per_image} seconds")
-        
-        # First, generate all audio files
+        # Generate all audio files first
         print("\nGenerating audio for each sentence...")
         for i, item in enumerate(script_with_images):
             audio_path = os.path.join(temp_dir, f"audio_{i}.mp3")
             if generate_audio_for_sentence(item['sentence'], audio_path):
                 audio_files.append(audio_path)
                 print(f"Generated audio for sentence {i+1}/{len(script_with_images)}")
-        
-        # Then process each image
-        print("\nCreating video frames...")
+
+        # Process each image
+        print("\nCreating video clips...")
         for i, item in enumerate(script_with_images):
             print(f"\nProcessing image {i+1}/{len(script_with_images)}")
             if item['image']:
-                # Download and read image
                 image_path = download_image(item['image'])
                 if image_path:
                     print(f"Downloaded image to: {image_path}")
-                    frame = cv2.imread(image_path)
-                    if frame is not None:
-                        print("Successfully read image")
-                        # Resize frame if necessary
-                        if frame.shape[:2] != (height, width):
-                            print(f"Resizing image from {frame.shape[:2]} to {(height, width)}")
-                            frame = cv2.resize(frame, (width, height))
-                        
-                        # Add subtitle
-                        frame = add_subtitle_to_frame(frame, item['sentence'])
-                        
-                        # Write frame for exactly 5 seconds
-                        print(f"Writing {frames_per_image} frames")
-                        for _ in range(frames_per_image):
-                            out.write(frame.copy())
-                        
-                        # Clean up
-                        os.unlink(image_path)
-                        print("Cleaned up image file")
-                    else:
-                        print(f"Warning: Could not read image for sentence {i+1}")
+                    
+                    # Create image clip
+                    img_clip = ImageClip(image_path, duration=duration_per_image)
+                    
+                    # Create text clip for subtitle with improved styling
+                    txt_clip = TextClip(
+                        txt=item['sentence'],
+                        fontsize=24,
+                        color='white',
+                        font='Arial-Bold',
+                        size=(img_clip.size[0]*0.9, None),  # 90% of image width
+                        method='caption',
+                        align='center',
+                        stroke_color='black',
+                        stroke_width=1
+                    )
+                    txt_clip = txt_clip.set_position(('center', 'bottom')).set_duration(duration_per_image)
+                    
+                    # Create semi-transparent background for text
+                    txt_bg = ColorClip(
+                        size=(img_clip.size[0], txt_clip.size[1] + 20),  # Add some padding
+                        color=(0, 0, 0),
+                        duration=duration_per_image
+                    )
+                    txt_bg = txt_bg.set_opacity(0.5).set_position(('center', img_clip.size[1] - txt_clip.size[1] - 20))
+                    
+                    # Composite all elements
+                    video_clip = CompositeVideoClip([
+                        img_clip,
+                        txt_bg,
+                        txt_clip
+                    ])
+                    
+                    # Set audio if available
+                    if i < len(audio_files):
+                        audio_clip = AudioFileClip(audio_files[i])
+                        video_clip = video_clip.set_audio(audio_clip)
+                    
+                    video_clips.append(video_clip)
+                    os.unlink(image_path)
+                    print("Cleaned up image file")
+                else:
+                    print(f"Warning: Could not download image for sentence {i+1}")
+            else:
+                print(f"Warning: No image provided for sentence {i+1}")
+        
+        # Concatenate all video clips
+        if video_clips:
+            print("\nConcatenating video clips...")
+            final_clip = concatenate_videoclips(video_clips, method="compose")
+            
+            # Write the final video file
+            print("\nWriting final video file...")
+            final_clip.write_videofile(
+                output_path,
+                fps=24,
+                codec='libx264',
+                audio_codec='aac',
+                threads=4,
+                preset='fast',
+                bitrate='3000k'
+            )
+            
+            # Clean up temporary files
+            print("\nCleaning up temporary files...")
+            for file in audio_files:
+                os.unlink(file)
+            os.rmdir(temp_dir)
+            
+            print(f"\nVideo created successfully: {output_path}")
+            print(f"Video duration: {len(script_with_images) * duration_per_image} seconds")
+        else:
+            print("No valid video clips were created")
+        
+    except Exception as e:
+        print(f"Error creating video: {str(e)}")
+        try:
+            for file in audio_files:
+                if os.path.exists(file):
+                    os.unlink(file)
+            if os.path.exists(temp_dir):
+                os.rmdir(temp_dir)
+        except:
+            pass
+    """Create video from images and add subtitles with audio using moviepy"""
+    try:
+        if not script_with_images or not any(item['image'] for item in script_with_images):
+            print("No valid images found for video creation")
+            return
+
+        temp_dir = tempfile.mkdtemp()
+        audio_files = []
+        video_clips = []
+
+        # Generate all audio files first
+        print("\nGenerating audio for each sentence...")
+        for i, item in enumerate(script_with_images):
+            audio_path = os.path.join(temp_dir, f"audio_{i}.mp3")
+            if generate_audio_for_sentence(item['sentence'], audio_path):
+                audio_files.append(audio_path)
+                print(f"Generated audio for sentence {i+1}/{len(script_with_images)}")
+
+        # Process each image
+        print("\nCreating video clips...")
+        for i, item in enumerate(script_with_images):
+            print(f"\nProcessing image {i+1}/{len(script_with_images)}")
+            if item['image']:
+                image_path = download_image(item['image'])
+                if image_path:
+                    print(f"Downloaded image to: {image_path}")
+                    
+                    # Create image clip
+                    img_clip = ImageClip(image_path, duration=duration_per_image)
+                    
+                    # Create text clip for subtitle with improved styling
+                    txt_clip = TextClip(
+                        txt=item['sentence'],
+                        fontsize=24,
+                        color='white',
+                        font='Arial-Bold',
+                        size=(img_clip.size[0]*0.9, None),  # 90% of image width
+                        method='caption',
+                        align='center',
+                        stroke_color='black',
+                        stroke_width=1
+                    )
+                    txt_clip = txt_clip.set_position(('center', 'bottom')).set_duration(duration_per_image)
+                    
+                    # Create semi-transparent background for text
+                    txt_bg = ColorClip(
+                        size=(img_clip.size[0], txt_clip.size[1] + 20),  # Add some padding
+                        color=(0, 0, 0),
+                        duration=duration_per_image
+                    )
+                    txt_bg = txt_bg.set_opacity(0.5).set_position(('center', img_clip.size[1] - txt_clip.size[1] - 20))
+                    
+                    # Composite all elements
+                    video_clip = CompositeVideoClip([
+                        img_clip,
+                        txt_bg,
+                        txt_clip
+                    ])
+                    
+                    # Set audio if available
+                    if i < len(audio_files):
+                        audio_clip = AudioFileClip(audio_files[i])
+                        video_clip = video_clip.set_audio(audio_clip)
+                    
+                    video_clips.append(video_clip)
+                    os.unlink(image_path)
+                    print("Cleaned up image file")
                 else:
                     print(f"Warning: Could not download image for sentence {i+1}")
             else:

@@ -4,4 +4,7 @@ scraped_data
 scraped_data_startcoding
 indices/metadata.pkl
 output_video.mp4
-
+unilever_data/
+venv/
+output/
+indices/
