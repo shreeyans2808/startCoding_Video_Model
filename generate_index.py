@@ -83,7 +83,7 @@ def process_directory(directory_path, index, metadata):
 
 if __name__ == "__main__":
     # Specify the directory path here
-    data_directory = "/home/sriya/StartCoding/startCoding_Video_Model/unilever_data"  # Change this to your desired directory path
+    data_directory = "/home/sriya/StartCoding/startCoding_Video_Model/scraped_data"  # Change this to your desired directory path
     
     # Create new index
     index, metadata = create_new_index()
