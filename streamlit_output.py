@@ -352,7 +352,7 @@ def create_video_with_progress(script_with_images, output_path="output_video.mp4
                 threads=4,
                 preset='medium',
                 bitrate='2000k',
-                verbose=False,
+                # verbose=False,
                 logger=None
             )
             
