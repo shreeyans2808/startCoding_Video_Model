@@ -16,7 +16,14 @@ st.set_page_config(page_title="Text-to-Video Generator", layout="wide")
 st.title("📹 Text-to-Video Generator Workflow")
 
 # --- Step 1: Webscraping ---
+import threading
+
 st.header("Step 1: Webscraping")
+if "scraping_thread" not in st.session_state:
+    st.session_state.scraping_thread = None
+if "stop_event" not in st.session_state:
+    st.session_state.stop_event = None
+
 with st.form("webscrape_form"):
     url = st.text_input("Enter the URL to scrape", "")
     max_pages = st.number_input("Max pages to scrape", min_value=1, max_value=200, value=50)
@@ -24,19 +31,44 @@ with st.form("webscrape_form"):
     output_dir = st.text_input("Output directory", "scraped_data")
     submitted = st.form_submit_button("Start Webscraping")
 
-if submitted and url:
-    st.info(f"Starting webscraping for: {url}")
+def run_scraper(url, max_pages, delay, output_dir, stop_event):
     try:
         scraper = AdvancedWebScraper(
             base_url=url,
             max_pages=int(max_pages),
             delay=float(delay),
-            output_dir=output_dir
+            output_dir=output_dir,
+            stop_event=stop_event  # You must add this param to your scraper class
         )
         scraper.crawl_and_scrape()
-        st.success(f"Webscraping complete. Data saved to '{output_dir}'")
+        st.session_state.scraping_result = f"Webscraping complete. Data saved to '{output_dir}'"
     except Exception as e:
-        st.error(f"Webscraping failed: {e}")
+        st.session_state.scraping_result = f"Webscraping failed: {e}"
+
+if submitted and url:
+    st.info(f"Starting webscraping for: {url}")
+    stop_event = threading.Event()
+    st.session_state.stop_event = stop_event
+    thread = threading.Thread(
+        target=run_scraper,
+        args=(url, max_pages, delay, output_dir, stop_event),
+        daemon=True
+    )
+    st.session_state.scraping_thread = thread
+    st.session_state.scraping_result = None
+    thread.start()
+
+if st.session_state.scraping_thread and st.session_state.scraping_thread.is_alive():
+    if st.button("Stop Webscraping"):
+        if st.session_state.stop_event:
+            st.session_state.stop_event.set()
+            st.info("Stop signal sent to webscraper.")
+    st.info("Webscraping in progress...")
+elif "scraping_result" in st.session_state and st.session_state.scraping_result:
+    if "complete" in st.session_state.scraping_result:
+        st.success(st.session_state.scraping_result)
+    else:
+        st.error(st.session_state.scraping_result)
 
 # --- Step 2: Indexing ---
 st.header("Step 2: Indexing")

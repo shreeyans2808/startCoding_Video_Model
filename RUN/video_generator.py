@@ -39,6 +39,42 @@ def download_image(url):
         print(f"Error downloading image: {str(e)}")
     return None
 
+def resize_image(image_path, target_size=(1920, 1080)):
+    """Resize image to target size while maintaining aspect ratio"""
+    try:
+        with Image.open(image_path) as img:
+            # Calculate new size maintaining aspect ratio
+            img_ratio = img.width / img.height
+            target_ratio = target_size[0] / target_size[1]
+            
+            if img_ratio > target_ratio:
+                # Image is wider than target
+                new_height = target_size[1]
+                new_width = int(new_height * img_ratio)
+            else:
+                # Image is taller than target
+                new_width = target_size[0]
+                new_height = int(new_width / img_ratio)
+                
+            # Resize image
+            resized_img = img.resize((new_width, new_height), Image.LANCZOS)
+            
+            # Create new image with target size
+            new_img = Image.new('RGB', target_size, (0, 0, 0))
+            
+            # Paste resized image centered
+            offset = ((target_size[0] - new_width) // 2, (target_size[1] - new_height) // 2)
+            new_img.paste(resized_img, offset)
+            
+            # Save resized image
+            resized_path = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg').name
+            new_img.save(resized_path, 'JPEG', quality=90)
+            return resized_path
+            
+    except Exception as e:
+        print(f"Error resizing image: {str(e)}")
+        return image_path  # Return original if resize fails
+
 def generate_audio_for_sentence(sentence, output_path):
     """Generate audio for a sentence using gTTS"""
     try:
@@ -63,23 +99,20 @@ def generate_audio_for_sentence(sentence, output_path):
         print(f"Error generating audio: {str(e)}")
         return False
 
-def create_text_image(text, image_size, font_size=24):
-    """Create a text overlay image using PIL instead of MoviePy TextClip"""
+def create_text_image(text, image_size, font_size=32):
+    """Create a text overlay image with better visibility"""
     try:
         # Create a transparent image for text
         text_img = Image.new('RGBA', image_size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(text_img)
         
-        # Try to use a system font, fall back to default if not available
+        # Try to use a bold system font
         try:
-            # Try common system fonts
             font_paths = [
-                "/System/Library/Fonts/Arial.ttf",  # macOS
-                "/Windows/Fonts/arial.ttf",         # Windows
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
-                "/usr/share/fonts/TTF/arial.ttf",   # Some Linux distributions
-                "/System/Library/Fonts/Helvetica.ttc",  # macOS alternative
-                "/Windows/Fonts/calibri.ttf",       # Windows alternative
+                "/System/Library/Fonts/Arial Bold.ttf",  # macOS
+                "/Windows/Fonts/arialbd.ttf",            # Windows
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # Linux
+                "/usr/share/fonts/TTF/arialbd.ttf",     # Some Linux distributions
             ]
             
             font = None
@@ -92,15 +125,15 @@ def create_text_image(text, image_size, font_size=24):
                         continue
             
             if font is None:
-                font = ImageFont.load_default()
-                
+                font = ImageFont.load_default().font_variant(size=font_size)
         except Exception:
             font = ImageFont.load_default()
         
-        # Wrap text to fit image width
+        # Wrap text to fit image width with margins
         words = text.split()
         lines = []
         current_line = []
+        max_width = image_size[0] - 80  # 40px margin on each side
         
         for word in words:
             test_line = ' '.join(current_line + [word])
@@ -108,10 +141,9 @@ def create_text_image(text, image_size, font_size=24):
                 bbox = draw.textbbox((0, 0), test_line, font=font)
                 text_width = bbox[2] - bbox[0]
             except:
-                # Fallback for older PIL versions
                 text_width = len(test_line) * (font_size * 0.6)
             
-            if text_width <= image_size[0] - 40:  # Leave 20px margin on each side
+            if text_width <= max_width:
                 current_line.append(word)
             else:
                 if current_line:
@@ -121,41 +153,49 @@ def create_text_image(text, image_size, font_size=24):
         if current_line:
             lines.append(' '.join(current_line))
         
-        # Calculate total text height
-        line_height = font_size + 5
+        # Calculate text block dimensions
+        line_height = int(font_size * 1.2)
         total_text_height = len(lines) * line_height
+        padding = 20
         
-        # Position text at bottom of image
-        start_y = max(10, image_size[1] - total_text_height - 20)
+        # Position text block at bottom center
+        text_block_width = image_size[0] - 80
+        text_block_height = total_text_height + padding * 2
+        text_block_y = image_size[1] - text_block_height - 40
         
-        # Draw background rectangle
-        bg_y = start_y - 10
-        bg_height = total_text_height + 20
-        draw.rectangle([(0, bg_y), (image_size[0], bg_y + bg_height)], 
-                      fill=(0, 0, 0, 180))  # Semi-transparent black
+        # Draw semi-transparent background
+        bg_color = (0, 0, 0, 180)  # Dark semi-transparent
+        draw.rectangle(
+            [(40, text_block_y), 
+             (40 + text_block_width, text_block_y + text_block_height)],
+            fill=bg_color
+        )
         
-        # Draw text lines
+        # Draw text with white color and black outline for readability
+        text_color = (255, 255, 255)
+        outline_color = (0, 0, 0)
+        outline_width = 2
+        
         for i, line in enumerate(lines):
             try:
                 bbox = draw.textbbox((0, 0), line, font=font)
                 text_width = bbox[2] - bbox[0]
             except:
-                # Fallback for older PIL versions
                 text_width = len(line) * (font_size * 0.6)
             
-            x = max(20, (image_size[0] - text_width) // 2)  # Center text with minimum margin
-            y = start_y + i * line_height
+            x = (image_size[0] - text_width) // 2
+            y = text_block_y + padding + i * line_height
             
-            # Draw text with outline for better visibility
-            outline_width = 1
-            for dx in [-outline_width, 0, outline_width]:
-                for dy in [-outline_width, 0, outline_width]:
-                    if dx != 0 or dy != 0:
-                        draw.text((x + dx, y + dy), line, font=font, fill=(0, 0, 0, 255))
+            # Draw outline
+            for ox in range(-outline_width, outline_width + 1):
+                for oy in range(-outline_width, outline_width + 1):
+                    if ox != 0 or oy != 0:
+                        draw.text((x + ox, y + oy), line, font=font, fill=outline_color)
             
-            draw.text((x, y), line, font=font, fill=(255, 255, 255, 255))
+            # Draw main text
+            draw.text((x, y), line, font=font, fill=text_color)
         
-        # Save text image to temporary file
+        # Save text image
         temp_text_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
         text_img.save(temp_text_file.name, 'PNG')
         temp_text_file.close()
@@ -178,113 +218,99 @@ def get_audio_duration(audio_path):
         return 5.0  # Default to 5 seconds
 
 def create_video(script_with_images, output_path="output_video.mp4", default_duration=5):
-    """Create video from images and add subtitles with audio using moviepy"""
+    """Create video with consistent image sizes and captions"""
     try:
-        if not script_with_images or not any(item.get('image') for item in script_with_images):
-            print("No valid images found for video creation")
+        if not script_with_images:
+            print("No content to create video")
             return
 
         temp_dir = tempfile.mkdtemp()
         audio_files = []
         video_clips = []
         text_image_files = []
-
+        
+        # Standard video dimensions
+        video_size = (1920, 1080)
+        
         # Generate all audio files first
-        print("\nGenerating audio for each sentence...")
         for i, item in enumerate(script_with_images):
             if item.get('sentence'):
                 audio_path = os.path.join(temp_dir, f"audio_{i}.mp3")
                 if generate_audio_for_sentence(item['sentence'], audio_path):
                     audio_files.append(audio_path)
-                    print(f"Generated audio for sentence {i+1}/{len(script_with_images)}")
                 else:
                     audio_files.append(None)
             else:
                 audio_files.append(None)
 
         # Process each image
-        print("\nCreating video clips...")
         for i, item in enumerate(script_with_images):
-            print(f"\nProcessing image {i+1}/{len(script_with_images)}")
+            print(f"\nProcessing clip {i+1}/{len(script_with_images)}")
             
             if not item.get('image'):
-                print(f"Warning: No image provided for sentence {i+1}")
+                print("No image provided, skipping")
                 continue
                 
             image_path = download_image(item['image'])
             if not image_path:
-                print(f"Warning: Could not download image for sentence {i+1}")
+                print("Could not download image, skipping")
                 continue
                 
             try:
-                # Determine clip duration based on audio if available
-                if i < len(audio_files) and audio_files[i] and os.path.exists(audio_files[i]):
+                # Resize image to standard size
+                resized_path = resize_image(image_path, video_size)
+                if resized_path != image_path:
+                    os.unlink(image_path)  # Delete original if we created a resized version
+                    image_path = resized_path
+                
+                # Determine clip duration
+                if i < len(audio_files) and audio_files[i]:
                     clip_duration = get_audio_duration(audio_files[i])
-                    print(f"Using audio duration: {clip_duration:.2f} seconds")
                 else:
                     clip_duration = default_duration
-                    print(f"Using default duration: {clip_duration} seconds")
                 
                 # Create image clip
                 img_clip = ImageClip(image_path, duration=clip_duration)
                 
-                # Get image dimensions for text overlay
-                with Image.open(image_path) as img:
-                    img_size = img.size
-                
-                # Create text overlay using PIL
-                sentence_text = str(item['sentence']).strip()
-                if sentence_text and len(sentence_text) > 0:
-                    print(f"Creating text overlay for: {sentence_text[:50]}...")
-                    
-                    # Limit sentence length
+                # Create text overlay if we have text
+                sentence_text = str(item.get('sentence', '')).strip()
+                if sentence_text:
+                    # Shorten very long text
                     if len(sentence_text) > 150:
                         sentence_text = sentence_text[:147] + "..."
                     
-                    text_image_path = create_text_image(sentence_text, img_size)
+                    text_image_path = create_text_image(sentence_text, video_size)
                     if text_image_path:
                         text_image_files.append(text_image_path)
-                        
-                        # Create text clip from the generated image
                         text_clip = ImageClip(text_image_path, duration=clip_duration)
-                        
-                        # Composite image and text
                         video_clip = CompositeVideoClip([img_clip, text_clip])
-                        print("Successfully created video clip with text overlay")
                     else:
                         video_clip = img_clip
-                        print("Using video clip without text overlay")
                 else:
                     video_clip = img_clip
-                    print("No text to overlay")
                 
                 # Add audio if available
-                if i < len(audio_files) and audio_files[i] and os.path.exists(audio_files[i]):
+                if i < len(audio_files) and audio_files[i]:
                     try:
                         audio_clip = AudioFileClip(audio_files[i])
                         video_clip.audio = audio_clip
-                        print("Successfully added audio to video clip")
-                    except Exception as audio_error:
-                        print(f"Warning: Could not add audio: {audio_error}")
+                    except Exception as e:
+                        print(f"Could not add audio: {str(e)}")
                 
                 video_clips.append(video_clip)
-                
-                # Clean up downloaded image
                 os.unlink(image_path)
                 
-            except Exception as clip_error:
-                print(f"Error processing clip {i+1}: {clip_error}")
+            except Exception as e:
+                print(f"Error processing clip: {str(e)}")
                 if os.path.exists(image_path):
                     os.unlink(image_path)
                 continue
 
         # Concatenate all video clips
         if video_clips:
-            print(f"\nConcatenating {len(video_clips)} video clips...")
             final_clip = concatenate_videoclips(video_clips, method="compose")
             
-            # Write the final video file
-            print("\nWriting final video file...")
+            # Write final video
             final_clip.write_videofile(
                 output_path,
                 fps=24,
@@ -292,7 +318,7 @@ def create_video(script_with_images, output_path="output_video.mp4", default_dur
                 audio_codec='aac',
                 threads=4,
                 preset='medium',
-                bitrate='2000k'
+                bitrate='3000k'  # Increased bitrate for better quality
             )
             
             # Clean up
@@ -301,25 +327,18 @@ def create_video(script_with_images, output_path="output_video.mp4", default_dur
                 clip.close()
             
             print(f"\nVideo created successfully: {output_path}")
-            total_duration = sum(clip.duration for clip in video_clips)
-            print(f"Video duration: {total_duration:.2f} seconds")
         else:
             print("No valid video clips were created")
         
         # Clean up temporary files
-        print("\nCleaning up temporary files...")
-        for file in audio_files:
+        for file in audio_files + text_image_files:
             if file and os.path.exists(file):
-                os.unlink(file)
-        
-        for file in text_image_files:
-            if os.path.exists(file):
                 os.unlink(file)
         
         try:
             os.rmdir(temp_dir)
         except OSError:
-            pass  # Directory might not be empty
+            pass
         
     except Exception as e:
         print(f"Error creating video: {str(e)}")
@@ -327,9 +346,7 @@ def create_video(script_with_images, output_path="output_video.mp4", default_dur
         try:
             if 'temp_dir' in locals():
                 for file in os.listdir(temp_dir):
-                    file_path = os.path.join(temp_dir, file)
-                    if os.path.isfile(file_path):
-                        os.unlink(file_path)
+                    os.unlink(os.path.join(temp_dir, file))
                 os.rmdir(temp_dir)
         except:
             pass

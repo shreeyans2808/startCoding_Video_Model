@@ -117,11 +117,15 @@ def add_file(file_path, index, metadata, current_index):
     ext = os.path.splitext(file_path)[1].lower()
     if ext in ['.txt', '.md', '.html', '.htm']:
         content_type = "text"
-    elif ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
+    elif ext in [
+        '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif', '.svg', '.heic'
+    ]:
         content_type = "image"
     elif ext in ['.mp3', '.wav', '.ogg', '.m4a']:
         content_type = "audio"
-    elif ext in ['.mp4', '.avi', '.mov', '.wmv']:
+    elif ext in [
+        '.mp4', '.avi', '.mov', '.wmv', '.webm', '.mkv', '.flv', '.mpeg', '.mpg', '.3gp', '.m4v'
+    ]:
         content_type = "video"
     else:
         logger.error(f"Unsupported file type: {ext}")
@@ -131,18 +135,31 @@ def add_file(file_path, index, metadata, current_index):
     
     try:
         if content_type == "text":
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                return add_content(content, "text", index, metadata, file_path)
-            except UnicodeDecodeError:
+            if ext == '.pdf':
                 try:
-                    with open(file_path, 'r', encoding='latin-1') as f:
-                        content = f.read()
+                    import PyPDF2
+                    with open(file_path, 'rb') as f:
+                        reader = PyPDF2.PdfReader(f)
+                        content = ""
+                        for page in reader.pages:
+                            content += page.extract_text() or ""
                     return add_content(content, "text", index, metadata, file_path)
                 except Exception as e:
-                    logger.error(f"Error reading text file: {str(e)}")
+                    logger.error(f"Error reading PDF file: {str(e)}")
                     return False
+            else:
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    return add_content(content, "text", index, metadata, file_path)
+                except UnicodeDecodeError:
+                    try:
+                        with open(file_path, 'r', encoding='latin-1') as f:
+                            content = f.read()
+                        return add_content(content, "text", index, metadata, file_path)
+                    except Exception as e:
+                        logger.error(f"Error reading text file: {str(e)}")
+                        return False
         else:
             return add_content(file_path, content_type, index, metadata)
     except Exception as e:

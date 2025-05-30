@@ -297,9 +297,18 @@ class AdvancedWebScraper:
             
         return links
     
-    def crawl_and_scrape(self):
-        """Main function to crawl and scrape the website"""
+    def crawl_and_scrape(self, should_stop=None, progress_callback=None):
+        """
+        Main function to crawl and scrape the website.
+        Optionally accepts:
+            - should_stop: a callable returning True if the process should stop.
+            - progress_callback: a callable accepting (visited_count, max_pages).
+        """
         while self.urls_to_visit and len(self.visited_urls) < self.max_pages:
+            if should_stop and should_stop():
+                print("Webscraping stopped by user.")
+                break
+
             current_url = self.urls_to_visit.popleft()
             
             if current_url in self.visited_urls:
@@ -317,6 +326,9 @@ class AdvancedWebScraper:
             for link in new_links:
                 if link not in self.visited_urls and link not in self.urls_to_visit:
                     self.urls_to_visit.append(link)
+            
+            if progress_callback:
+                progress_callback(len(self.visited_urls), self.max_pages)
             
             time.sleep(self.delay)
             
